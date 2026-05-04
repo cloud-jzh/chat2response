@@ -90,6 +90,21 @@ export function convertResponsesToChat(body: ResponsesRequest): ChatCompletionRe
         });
         lastAssistantMsg = null;
       }
+      else if (item.type === 'reasoning') {
+        // Attach reasoning content to the last assistant message
+        if (lastAssistantMsg && lastAssistantMsg.role === 'assistant') {
+          lastAssistantMsg.reasoning_content = extractTextContent(item.content);
+        } else {
+          // Create a new assistant message to hold the reasoning
+          const msg: ChatMessage = {
+            role: 'assistant',
+            content: '',
+            reasoning_content: extractTextContent(item.content),
+          };
+          lastAssistantMsg = msg;
+          messages.push(msg);
+        }
+      }
     }
   }
   
