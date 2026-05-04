@@ -85,7 +85,7 @@ exports.PROVIDERS = {
                 }));
             }
             if (!transformed.model?.includes('kimi') && !transformed.model?.includes('moonshot')) {
-                transformed.model = 'kimi-coding';
+                transformed.model = process.env['KIMI_DEFAULT_MODEL'] || 'kimi-coding';
             }
             return transformed;
         },
