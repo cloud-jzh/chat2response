@@ -7,35 +7,46 @@ exports.getApiKey = getApiKey;
 exports.transformRequest = transformRequest;
 exports.isProviderSupported = isProviderSupported;
 exports.detectProviderFromModel = detectProviderFromModel;
+function getEnvConfig(prefix, defaults) {
+    const modelsEnv = process.env[`${prefix}_MODELS`];
+    return {
+        baseUrl: process.env[`${prefix}_BASE_URL`] || defaults.baseUrl,
+        defaultModel: process.env[`${prefix}_DEFAULT_MODEL`] || defaults.defaultModel,
+        models: modelsEnv ? modelsEnv.split(',').map(m => m.trim()) : defaults.models,
+        supportsTools: process.env[`${prefix}_SUPPORTS_TOOLS`] !== undefined
+            ? process.env[`${prefix}_SUPPORTS_TOOLS`] === 'true'
+            : defaults.supportsTools,
+        supportsStreaming: process.env[`${prefix}_SUPPORTS_STREAMING`] !== undefined
+            ? process.env[`${prefix}_SUPPORTS_STREAMING`] === 'true'
+            : defaults.supportsStreaming,
+    };
+}
 exports.PROVIDERS = {
     glm: {
         name: 'GLM',
-        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-        defaultModel: 'glm-5',
-        models: ['glm-5'],
-        supportsTools: false, // GLM does not support function calling well
-        supportsStreaming: true,
+        ...getEnvConfig('GLM', {
+            baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+            defaultModel: 'glm-5',
+            models: ['glm-5'],
+            supportsTools: false,
+            supportsStreaming: true,
+        }),
         transformRequest: (req) => {
-            // GLM doesn't support tools, so we remove them
             if (req.tools?.length) {
                 console.log('[GLM] Removing unsupported tools:', req.tools.length);
             }
             const transformed = {
                 ...req,
-                // GLM uses a different model naming convention
                 model: req.model?.startsWith('glm-') ? req.model : 'glm-5',
             };
-            // Remove tool-related fields
             delete transformed.tools;
             delete transformed.tool_choice;
-            // Flatten messages to simple text format for GLM
             if (transformed.messages) {
                 transformed.messages = transformed.messages.map(msg => ({
                     role: msg.role,
                     content: typeof msg.content === 'string'
                         ? msg.content
                         : JSON.stringify(msg.content),
-                    // Preserve tool_call_id for multi-turn tool results
                     ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
                 }));
             }
@@ -44,19 +55,20 @@ exports.PROVIDERS = {
     },
     kimi: {
         name: 'Kimi',
-        baseUrl: 'https://api.moonshot.cn/v1',
-        defaultModel: 'kimi-coding',
-        models: ['kimi-coding', 'moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
-        supportsTools: true,
-        supportsStreaming: true,
+        ...getEnvConfig('KIMI', {
+            baseUrl: 'https://api.moonshot.cn/v1',
+            defaultModel: 'kimi-coding',
+            models: ['kimi-coding', 'moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+            supportsTools: true,
+            supportsStreaming: true,
+        }),
         transformRequest: (req) => {
             const transformed = { ...req };
-            // Handle Kimi Coding Plan endpoint switch
             if (process.env.KIMI_CODING_PLAN === 'true') {
                 exports.PROVIDERS.kimi.baseUrl = 'https://api.kimi.com/coding/v1';
             }
             else {
-                exports.PROVIDERS.kimi.baseUrl = 'https://api.moonshot.cn/v1';
+                exports.PROVIDERS.kimi.baseUrl = process.env['KIMI_BASE_URL'] || 'https://api.moonshot.cn/v1';
             }
             if (transformed.tools) {
                 transformed.tools = transformed.tools.map(tool => ({
@@ -80,18 +92,16 @@ exports.PROVIDERS = {
     },
     deepseek: {
         name: 'DeepSeek',
-        baseUrl: 'https://api.deepseek.com/v1',
-        defaultModel: 'deepseek-chat',
-        models: ['deepseek-chat', 'deepseek-reasoner'],
-        supportsTools: true,
-        supportsStreaming: true,
-        // DeepSeek follows OpenAI format closely, minimal transformation needed
+        ...getEnvConfig('DEEPSEEK', {
+            baseUrl: 'https://api.deepseek.com/v1',
+            defaultModel: 'deepseek-chat',
+            models: ['deepseek-chat', 'deepseek-reasoner'],
+            supportsTools: true,
+            supportsStreaming: true,
+        }),
         transformRequest: (req) => {
-            // DeepSeek doesn't support some OpenAI-specific parameters
             const transformed = { ...req };
-            // Remove unsupported fields
             delete transformed['store'];
-            // Use DeepSeek model if not specified
             if (!transformed.model?.startsWith('deepseek')) {
                 transformed.model = 'deepseek-chat';
             }
@@ -100,28 +110,26 @@ exports.PROVIDERS = {
     },
     minimax: {
         name: 'MiniMax',
-        baseUrl: 'https://api.minimax.chat/v1', // 国内版 API
-        defaultModel: 'minimax-2.7',
-        models: ['minimax-2.7'],
-        supportsTools: true,
-        supportsStreaming: true,
+        ...getEnvConfig('MINIMAX', {
+            baseUrl: 'https://api.minimax.chat/v1',
+            defaultModel: 'minimax-2.7',
+            models: ['minimax-2.7'],
+            supportsTools: true,
+            supportsStreaming: true,
+        }),
         transformRequest: (req) => {
             const transformed = { ...req };
-            // MiniMax uses different model naming
             if (!transformed.model?.includes('minimax')) {
                 transformed.model = 'minimax-2.7';
             }
-            // MiniMax requires specific message format
             if (transformed.messages) {
                 transformed.messages = transformed.messages.map(msg => {
-                    // Ensure content is always a string
                     const content = typeof msg.content === 'string'
                         ? msg.content
                         : JSON.stringify(msg.content);
                     return {
                         role: msg.role,
                         content,
-                        // Preserve tool_call_id for multi-turn tool results
                         ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
                     };
                 });

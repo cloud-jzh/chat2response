@@ -118,6 +118,8 @@ MINIMAX_API_KEY=your_minimax_key
 DEFAULT_PROVIDER=deepseek
 ```
 
+所有 Provider 配置项均支持通过环境变量自定义，无需修改源码。详见下方 [Provider 环境变量配置](#provider-环境变量配置) 章节。
+
 ### 3. 启动服务器
 
 ```bash
@@ -182,6 +184,55 @@ env_key = "GLM_API_KEY"
 | Kimi | kimi-coding | ✅ | ✅ | Kimi for Coding 专用 |
 | DeepSeek | deepseek-chat | ✅ | ✅ | **推荐** |
 | MiniMax | minimax-2.7 | ✅ | ✅ | - |
+
+## Provider 环境变量配置
+
+所有 Provider 的配置项均支持通过 `.env` 文件自定义，无需修改源码。未设置的环境变量将使用内置默认值。
+
+### 通用配置项
+
+每个 Provider 支持以下环境变量（以 `{PROVIDER}` 为前缀）：
+
+| 环境变量 | 说明 | 示例 |
+|----------|------|------|
+| `{PROVIDER}_API_KEY` | API 密钥 | `DEEPSEEK_API_KEY=sk-xxx` |
+| `{PROVIDER}_BASE_URL` | API 基础地址 | `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1` |
+| `{PROVIDER}_DEFAULT_MODEL` | 默认模型 | `DEEPSEEK_DEFAULT_MODEL=deepseek-chat` |
+| `{PROVIDER}_MODELS` | 支持的模型列表（逗号分隔） | `DEEPSEEK_MODELS=deepseek-chat,deepseek-reasoner` |
+| `{PROVIDER}_SUPPORTS_TOOLS` | 是否支持工具调用 | `DEEPSEEK_SUPPORTS_TOOLS=true` |
+| `{PROVIDER}_SUPPORTS_STREAMING` | 是否支持流式输出 | `DEEPSEEK_SUPPORTS_STREAMING=true` |
+
+### 各 Provider 默认值
+
+| Provider | BASE_URL | DEFAULT_MODEL | MODELS | SUPPORTS_TOOLS | SUPPORTS_STREAMING |
+|----------|----------|---------------|--------|----------------|-------------------|
+| GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-5` | `glm-5` | `false` | `true` |
+| Kimi | `https://api.moonshot.cn/v1` | `kimi-coding` | `kimi-coding,moonshot-v1-8k,...` | `true` | `true` |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` | `deepseek-chat,deepseek-reasoner` | `true` | `true` |
+| MiniMax | `https://api.minimax.chat/v1` | `minimax-2.7` | `minimax-2.7` | `true` | `true` |
+
+### 特殊配置
+
+| 环境变量 | 说明 |
+|----------|------|
+| `KIMI_CODING_PLAN` | 设为 `true` 时切换至 Kimi Coding 专用端点 `https://api.kimi.com/coding/v1` |
+| `DEFAULT_PROVIDER` | 全局默认 Provider（`glm` / `kimi` / `deepseek` / `minimax`） |
+| `PORT` | 服务端口，默认 `3456` |
+| `DEBUG` | 调试模式，设为 `true` 输出详细日志 |
+
+### 配置示例
+
+```bash
+# 使用自定义 DeepSeek 端点（如代理地址）
+DEEPSEEK_BASE_URL=https://my-proxy.example.com/v1
+DEEPSEEK_DEFAULT_MODEL=deepseek-chat
+
+# 禁用 GLM 的流式输出
+GLM_SUPPORTS_STREAMING=false
+
+# 添加自定义模型到 Kimi
+KIMI_MODELS=kimi-coding,moonshot-v1-8k,my-custom-model
+```
 
 ## Streaming 事件序列
 

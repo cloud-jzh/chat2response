@@ -42,7 +42,8 @@ export function convertResponsesToChat(body: ResponsesRequest): ChatCompletionRe
     let lastAssistantMsg: ChatMessage | null = null;
 
     for (const item of input) {
-      if (item.type === 'message') {
+      const itemType = item.type || 'message';
+      if (itemType === 'message') {
         const role = item.role === 'developer' ? 'system' : item.role;
         const msg: ChatMessage = {
           role: role as any,
@@ -56,7 +57,7 @@ export function convertResponsesToChat(body: ResponsesRequest): ChatCompletionRe
         }
         messages.push(msg);
       } 
-      else if (item.type === 'function_call') {
+      else if (itemType === 'function_call') {
         // If we have a function call, it MUST be attached to an assistant message
         const toolCall: ToolCall = {
           id: item.call_id || `call_${uuidv4().replace(/-/g, '')}`,
@@ -81,7 +82,7 @@ export function convertResponsesToChat(body: ResponsesRequest): ChatCompletionRe
           messages.push(msg);
         }
       } 
-      else if (item.type === 'function_call_output') {
+      else if (itemType === 'function_call_output') {
         messages.push({
           role: 'tool',
           content: item.output || '',
@@ -145,23 +146,31 @@ function convertTool(tool: Tool): ChatTool {
   
   // Standard function tool
   if (tool.function) {
+    const params = tool.function.parameters || { type: 'object', properties: {} };
+    if (!('required' in params)) {
+      (params as any).required = [];
+    }
     return {
       type: 'function',
       function: {
         name: tool.function.name,
         description: tool.function.description || '',
-        parameters: tool.function.parameters || { type: 'object', properties: {} },
+        parameters: params,
       },
     };
   }
   
   // Fallback for simple tool definitions
+  const params = tool.parameters || { type: 'object', properties: {} };
+  if (!('required' in params)) {
+    (params as any).required = [];
+  }
   return {
     type: 'function',
     function: {
       name: tool.name || 'unknown_tool',
       description: tool.description || '',
-      parameters: tool.parameters || { type: 'object', properties: {} },
+      parameters: params,
     },
   };
 }
