@@ -34,7 +34,48 @@ codex
 
 ## Critical Architecture Notes
 
-### 1. Module Loading Order (dotenv)
+### 1. Multimodal Image Handling
+
+**Problem**: Codex sends images with internal `<image>` placeholder text:
+```json
+{
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "你能看到图片吗" },
+        { "type": "input_text", "text": "<image>" },
+        { "type": "input_image", "image_url": "data:image/png;base64,..." },
+        { "type": "input_text", "text": "</image>" }
+      ]
+    }
+  ]
+}
+```
+
+The `<image>` and `</image>` text parts are Codex internal placeholders. If sent to the model alongside the real `input_image`, the model sees empty `<image>` tags and cannot access the actual image data.
+
+**Fix** in `converter.ts` `extractTextContent()`:
+```typescript
+const mapped = content.flatMap(part => {
+  if (part.type === 'input_image') {
+    return [{ type: 'image_url', image_url: { url: part.image_url || '' } }];
+  }
+  if (part.type === 'input_text') {
+    const text = part.text || '';
+    // Skip Codex's internal <image> / </image> placeholders
+    if (text.trim() === '<image>' || text.trim() === '</image>') {
+      return [];
+    }
+    return [{ type: 'text', text }];
+  }
+  return [part];
+});
+```
+
+**Symptom**: Model responds "I cannot see the image" or "<image> tag is empty".
+
+### 2. Module Loading Order (dotenv)
 
 **Problem**: `providers/index.ts` is imported BEFORE `dotenv.config()` runs in `app.ts`, causing env vars to be undefined when provider config is initialized.
 
@@ -46,7 +87,7 @@ dotenv.config();
 
 **Symptom**: 401 Authentication error even with correct API key, because requests go to default URL instead of configured `BASE_URL`.
 
-### 2. Input Array Missing `type` Field
+### 3. Input Array Missing `type` Field
 
 **Problem**: Codex sends `input` array items WITHOUT `type` field:
 ```json
@@ -69,7 +110,7 @@ if (itemType === 'message') {
 
 **Symptom**: `field messages is required` (500 error from newapi).
 
-### 3. Tools Schema Missing `required` Field
+### 4. Tools Schema Missing `required` Field
 
 **Problem**: Codex sends tools with `parameters` that lack `required` field:
 ```json
@@ -94,7 +135,7 @@ if (!('required' in params)) {
 
 **Symptom**: `Invalid schema for function 'xxx': null is not of type "array"`.
 
-### 4. Model Name Fallback
+### 5. Model Name Fallback
 
 **Problem**: If model name doesn't start with provider prefix (e.g., `deepseek`), it gets forced to default.
 
@@ -143,6 +184,8 @@ When Codex fails but direct curl works:
 | `store` | `false` | Delete before forwarding |
 | `reasoning` | `null` | Pass through |
 | Content format | `[{type: "input_text", text: "..."}]` | Extract text content |
+| Content format (multimodal) | `[{type: "input_text"}, {type: "input_image", image_url: "..."}]` | Map to Chat Completions `image_url` format |
+| Image placeholder | `<image>` / `</image>` text parts | Skip placeholders, only send real `input_image` |
 | Developer role | `role: "developer"` | Convert to `system` |
 
 ## Testing Commands
@@ -179,6 +222,7 @@ curl -X POST http://localhost:3456/v1/responses \
 | `field messages is required` | `input` items missing `type` field | Default `item.type` to `'message'` |
 | `null is not of type "array"` | Tool `parameters` missing `required` | Add `required: []` if absent |
 | `no access to model xxx` | Model name forced to default | Check `transformRequest` model fallback logic |
+| Kimi cannot see image content | Codex sends `<image>` placeholder text alongside `input_image` | Skip `<image>` / `</image>` text parts when real image exists |
 
 ## Files to Check When Debugging
 

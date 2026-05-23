@@ -14,11 +14,15 @@ import type {
   ToolCall,
 } from './types';
 
-const DEBUG = process.env.DEBUG === 'true';
-
 function debug(...args: unknown[]) {
-  if (DEBUG) {
+  if (process.env.DEBUG === 'true') {
     console.log('[Converter]', ...args);
+  }
+}
+
+function debugImage(...args: unknown[]) {
+  if (process.env.DEBUG_IMAGE === 'true') {
+    console.log('[Converter:Image]', ...args);
   }
 }
 
@@ -92,14 +96,15 @@ export function convertResponsesToChat(body: ResponsesRequest): ChatCompletionRe
       }
       else if (item.type === 'reasoning') {
         // Attach reasoning content to the last assistant message
+        const reasoningText = extractTextOnly(item.content);
         if (lastAssistantMsg && lastAssistantMsg.role === 'assistant') {
-          lastAssistantMsg.reasoning_content = extractTextContent(item.content);
+          lastAssistantMsg.reasoning_content = reasoningText;
         } else {
           // Create a new assistant message to hold the reasoning
           const msg: ChatMessage = {
             role: 'assistant',
             content: '',
-            reasoning_content: extractTextContent(item.content),
+            reasoning_content: reasoningText,
           };
           lastAssistantMsg = msg;
           messages.push(msg);
@@ -124,16 +129,56 @@ export function convertResponsesToChat(body: ResponsesRequest): ChatCompletionRe
   };
 }
 
-function extractTextContent(content: string | ContentPart[] | undefined): string {
+function extractTextOnly(content: string | ContentPart[] | undefined): string {
   if (!content) return '';
   if (typeof content === 'string') return content;
-  
+
   return content
-    .filter((part): part is ContentPart & { type: 'input_text' | 'output_text' } => 
+    .filter((part): part is ContentPart & { type: 'input_text' | 'output_text' } =>
       part.type === 'input_text' || part.type === 'output_text'
     )
     .map(part => part.text || '')
     .join('');
+}
+
+function extractTextContent(content: string | ContentPart[] | undefined): string | ContentPart[] {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+
+  // If there are non-text parts (e.g. images), preserve the full ContentPart[] array
+  const hasNonTextParts = content.some(
+    part => part.type !== 'input_text' && part.type !== 'output_text'
+  );
+  if (hasNonTextParts) {
+    debugImage('Detected non-text content parts:', content.map(p => p.type).join(', '));
+    // Map Responses API image parts to Chat Completions API image_url format
+    const mapped = content.flatMap(part => {
+      if (part.type === 'input_image') {
+        const imagePart = {
+          type: 'image_url',
+          image_url: { url: part.image_url || '' },
+        } as any;
+        debugImage('Mapped input_image -> image_url, url length:', part.image_url?.length || 0);
+        return [imagePart];
+      }
+      if (part.type === 'input_text') {
+        const text = part.text || '';
+        // Skip Codex's internal <image> / </image> placeholders when a real image part exists
+        const trimmed = text.trim();
+        if (trimmed === '<image>' || trimmed === '</image>') {
+          debugImage('Skipped image placeholder:', trimmed);
+          return [];
+        }
+        return [{ type: 'text', text } as any];
+      }
+      return [part as any];
+    });
+    debugImage('Mapped content parts:', JSON.stringify(mapped, null, 2));
+    return mapped;
+  }
+
+  // Pure text parts: fall back to simple string concatenation
+  return extractTextOnly(content);
 }
 
 function convertTool(tool: Tool): ChatTool {
